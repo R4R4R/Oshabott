@@ -9,4 +9,4 @@ The most unique function of this bot that I have never seen another discord bot 
 Users can set the autoplaylist to their playlist if everyone in the voice chat agrees.
 This repository only contains the Music Cog of the bot, I will likely add my currently unfinished Games and Misc Cogs to this repo sometime soon.
 Disclaimer: I coded most of this bot before I was ever officially taught Python (and for the Async version, programming in general) so 
-there are likely some noticeably bad coding habits.
+there are likely some noticeably bad coding habits. A lot of files from my PC are excluded and the Token is taken out for security/privacy.
