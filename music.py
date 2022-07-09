@@ -7,10 +7,11 @@ import re
 import asyncio
 import random
 import time
+
 # Suppress noise about console usage from errors
 youtube_dl.utils.bug_reports_message = lambda: ''
 
-
+#formatting options for downloading songs and playlists
 ytdl_format_options = {
     'format': 'bestaudio/best',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
@@ -36,15 +37,19 @@ ffmpeg_options = {
 
 ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
 
+# Code to temporarily download a ffmpeg file to play through the bot.
+# I can't specifically recall where I got the base code for this function from and how much I changed,
+#   but I definitely made adjustments to fit my needs
 class YTDLSource(discord.PCMVolumeTransformer):
+    
     def __init__(self, source, *, data, volume=0.5):
         super().__init__(source, volume)
-
         self.data = data
         self.title = data.get('title')
         self.url = data.get('url')
         self.duration = data.get('duration')
 
+    # The input to this function can be either a url or a search term.
     @classmethod
     async def from_url(cls, url, *, loop=None, stream=False):
         loop = loop or asyncio.get_event_loop()
@@ -88,20 +93,27 @@ class YTDLSource(discord.PCMVolumeTransformer):
         await msg.delete()
         f.close()
 
+# The Song Queue I had made.
+# Now that I have a lot more programming experience, I know that a better option would be to have a Song class
+#   and a much simpler Queue that's made up of those Song objects, but back then I had only ever used simple types as member variables
+
 class Queue:
     def __init__(self):
         self.playerqueue = []
         self.ctxqueue = []
         self.urlqueue = []
     
+    # Is the Queue empty?
     def isEmpty(self):
         return self.playerqueue == []
     
+    # Add a song to the Queue
     async def enqueue(self, ctx, player, url):
         self.playerqueue.append(player)
         self.ctxqueue.append(ctx)
         self.urlqueue.append(url)
-
+    
+    # Remove the first song from the Queue
     async def dequeue(self):
         temp = self.isEmpty()
         if not temp:
@@ -109,11 +121,16 @@ class Queue:
             self.urlqueue.pop(0)
             self.playerqueue.pop(0)
     
+    # Append a song to the beginning of the Queue 
+    # The only reason I have this as a function is for an easter egg I added that's kind of an inside joke between my friends.
+    #   - The easter egg is that when a certain function is called it plays the song "Hyori Ittai" on loop,
+    #     but I didn't want to mess up the Queue so I just add the song in front.
     async def zeroqueue(self, ctx, player, url):
         self.playerqueue.insert(0, player)
         self.ctxqueue.insert(0, ctx)
         self.urlqueue.insert(0, url)
     
+    # Returns the current Player, ctx and url
     def currentplayer(self):
         return self.playerqueue[0]
     
@@ -123,6 +140,7 @@ class Queue:
     def currenturl(self):
         return self.urlqueue[0]
     
+    # Gets the Player, ctx and url at the specified index
     def getplayer(self, x):
         return self.playerqueue[x]
     
@@ -132,17 +150,13 @@ class Queue:
     def geturl(self, x):
         return self.urlqueue[x]
     
+    # Returns the size
     def size(self):
         return len(self.urlqueue)
 
 
 
-
-
-
-
-
-
+# The Music Cog of the bot. All the main music functionality is here.
 class MusicCog(commands.Cog, name="Music Commands"):
     
     def __init__(self, bot):
@@ -152,10 +166,18 @@ class MusicCog(commands.Cog, name="Music Commands"):
         self.ctx = 0
         self.skip = True
         self.paused = False
-        self.channel = bot.get_channel(676288007556300830)
-        self.guildid = bot.get_guild(218751753179365376)
-        self.hyit = False
-        self.playlist = "autoplaylist.txt"
+        
+        # The id of the channel users can send commands in. (Replace the 0s with your own if you want to create your own bot from this code)
+        self.channel = bot.get_channel(0)                                   
+        self.guildid = bot.get_guild(0)                       
+        
+        # Is "Hyori Ittai" playing on loop?
+        self.hyit = False                                                   
+        
+        # The name of the text file with the auto-playlist
+        # For creating an autoplaylist for the bot, I'd recommend creating a youtube playlist, using the "playlist addlist <link>" command,
+        # and then moving and renaming the file it creates for your playlist from 
+        self.playlist = "autoplaylist.txt"                                   
         self.dlnum = 0
         self.dlqueue = [0]
         self.dlnum2 = 0
@@ -165,6 +187,7 @@ class MusicCog(commands.Cog, name="Music Commands"):
         while self.dlqueue[1] != num:
             await asyncio.sleep(2)
     
+    # Setting up the bot on startup
     @commands.Cog.listener()
     async def on_ready(self):
         await asyncio.sleep(5)
@@ -181,7 +204,9 @@ class MusicCog(commands.Cog, name="Music Commands"):
         await self.next()
         self.dlnum2 = 0
         
-    
+    # Pauses whatever song is playing if a user leaves the vc. 
+    # Since the song download is temporary, it will eventually expire and no longer be able to resume the song.
+    # However, the rest of the queue is preserved.
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
         if self.dlnum2 == 1:
@@ -199,19 +224,22 @@ class MusicCog(commands.Cog, name="Music Commands"):
             self.guildid.voice_client.pause()
             print("paused")
             self.paused = True
-            
+    
+    # Pause the song
     @commands.command(name='pause', aliases=['stop'])
     async def pause(self, ctx):
         if not self.paused:
             self.guildid.voice_client.pause()
             self.paused = True
-        
+    
+    # Resume the song
     @commands.command(name='resume', aliases=['continue'])
     async def resume(self, ctx):
         if self.paused:
             self.guildid.voice_client.resume()
             self.paused = False
-
+    
+    # Make the bot join whichever vc you are in
     @commands.command(name='join', aliases=['summon'])
     async def join(self, ctx):
         self.playing = False
@@ -221,8 +249,12 @@ class MusicCog(commands.Cog, name="Music Commands"):
         self.ctx = ctx
         await self.next()
     
-    
-    async def yt2(self, ctx, *args):      #Literally just because I cant call yt from within playlist add and both of em have the same code and I dont want to repeat it
+    # This is the function that plays a song based on user input. The user can input either a url or search term. 
+    #   The bot will play the top youtube result if the user inputted a search term.
+    # If a song is playing from the playlist, it will automatically skip that song. 
+    #   However, if the current song was requested by someone, then it will append the song to the Queue.
+    # The reason I have a yt and yt2 is just because I cant call a discord command (yt) from within "playlist add" and both of em have the same code and I dont want to repeat it
+    async def yt2(self, ctx, *args):      
         url = " ".join(args)
         self.ctx = ctx
         members = ctx.voice_client.channel.members
@@ -230,6 +262,7 @@ class MusicCog(commands.Cog, name="Music Commands"):
         self.dlnum+=1
         self.dlqueue.append(self.dlnum)
         await self.dlq(self.dlnum)
+        # Get a list of members in the voice channel so that only members in the vc can play a song
         for member in members:
             memberids.append(member.id)
         if ctx.message.author.id in memberids and not ctx.message.author.voice.deaf and not ctx.message.author.voice.self_deaf:
@@ -276,22 +309,30 @@ class MusicCog(commands.Cog, name="Music Commands"):
             self.dlqueue.pop(1)
             await asyncio.sleep(10)
             await msg.delete()
-            
+    
+    # The actual "Play" (Request) command called by a user
     @commands.command(name='yt', aliases=['play'])
     async def yt(self, ctx, *args):
         await self.yt2(ctx, *args)
         
-            
+    # This function is automatically called at the end of a song. It checks the Queue (and whether Hyori Ittai is meant to play on loop) 
+    #   and chooses a random song from the auto-playlist if there are no more songs in the Queue
     async def next(self):
         if not self.hyit:
             await self.mq.dequeue()
         temp = self.mq.isEmpty()
-        if self.hyit:
+        
+        
+        if self.hyit:                       # If "Hyori Ittai" is playing on loop
+            # You could replace the two links here (the same link) to any song you want to make play on loop for fun
+            
             self.dlnum+=1
             self.dlqueue.append(self.dlnum)
             await self.dlq(self.dlnum)
             url, player = await YTDLSource.from_url("https://www.youtube.com/watch?v=WdnzvYvUucg", loop=self.bot.loop, stream=True)
-            guildid = self.bot.get_guild(218751753179365376)
+            
+            # Replace the 0 with the server id 
+            guildid = self.bot.get_guild(0)
             guildid.voice_client.play(player, after=self.my_after)
             await self.mq.zeroqueue(self.ctx, player, "https://www.youtube.com/watch?v=WdnzvYvUucg")
             self.guildid = guildid
@@ -301,12 +342,12 @@ class MusicCog(commands.Cog, name="Music Commands"):
                 msg = await self.ctx.send('Now playing: {}'.format(player.title))
                 await asyncio.sleep(10)
                 await msg.delete()
-        elif self.playing and not temp:
+        elif self.playing and not temp:    # If the Queue is not empty
             self.dlnum+=1
             self.dlqueue.append(self.dlnum)
             await self.dlq(self.dlnum)
             print("3")
-            try:
+            try:                           # If the song doesn't properly play for whatever reason, it skips the song
                 player = self.mq.currentplayer()
                 self.ctx = self.mq.currentctx()
                 self.ctx.voice_client.play(player, after=self.my_after)
@@ -324,7 +365,7 @@ class MusicCog(commands.Cog, name="Music Commands"):
                 await self.next()
                 await asyncio.sleep(10)
                 await msg.delete()
-        else:
+        else:                               # If the Queue is empty, pick a random song from the current playlist
             print("4")
             s=open(self.playlist,"r",encoding='utf8')
             m=s.readlines()
@@ -356,6 +397,8 @@ class MusicCog(commands.Cog, name="Music Commands"):
                 self.dlqueue.pop(1)
                 await self.next()
     
+    # The function that is actually called at the end of a song. Calls the above function. 
+    # There is some Exception handling but realistically should never trigger as the function above has its own Exception handling.
     def my_after(self, error):
         asyncio.run_coroutine_threadsafe(asyncio.sleep(1), self.bot.loop)
         try:
@@ -366,10 +409,7 @@ class MusicCog(commands.Cog, name="Music Commands"):
     
     
     
-    
-    
-    
-        
+    # The interface called for skipping a song. Making sure that enough people in the voice channel (one more than half) agree to skip.
     async def skipinterface(self, ctx):
         self.ctx = ctx
         members = ctx.voice_client.channel.members
@@ -403,7 +443,8 @@ class MusicCog(commands.Cog, name="Music Commands"):
             ctx.voice_client.stop()
             await asyncio.sleep(5)
             await msg.delete()
-                    
+    
+    # The skip command called by a user
     @commands.command()
     async def skip(self, ctx):
         self.ctx = ctx
@@ -411,7 +452,7 @@ class MusicCog(commands.Cog, name="Music Commands"):
         memberids = []
         for member in members:
             memberids.append(member.id)
-        if ctx.message.author.id ==218852384976273418:
+        if ctx.message.author.id == 0:          # This is where I would put my own discord id in place of the 0, it lets me skip without needing others to agree.
             ctx.voice_client.stop()
         else:
             if ctx.message.author.id in memberids and not ctx.message.author.voice.deaf and not ctx.message.author.voice.self_deaf:
@@ -421,7 +462,8 @@ class MusicCog(commands.Cog, name="Music Commands"):
                     ctx.voice_client.stop()
             else:
                 await ctx.send('You are not in vc')
-        
+    
+    # The interface for looking through the song Queue on Discord. It shows 10 queued songs maximum, and you can react with left or right to move through the Queue
     async def qinterface(self, ctx, length):
         self.ctx = ctx
         embed=discord.Embed(description='Right or Left to move through the list', color=0x51719f)
@@ -467,6 +509,7 @@ class MusicCog(commands.Cog, name="Music Commands"):
         except asyncio.TimeoutError:
             await msg.delete()
             
+    # See the current playing song
     @commands.command()      
     async def np(self, ctx):
         y = self.mq.getplayer(0)
@@ -481,7 +524,8 @@ class MusicCog(commands.Cog, name="Music Commands"):
         msg = await ctx.send(embed=embed)
         await asyncio.sleep(30)
         await msg.delete()
-        
+    
+    # See the entire Queue
     @commands.command()
     async def queue(self, ctx):
         y = self.mq.getplayer(0)
@@ -504,17 +548,19 @@ class MusicCog(commands.Cog, name="Music Commands"):
             await asyncio.sleep(30)
             await msg.delete()
     
+    # Search for a song url by entering a search term
     @commands.command()
     async def search(self, ctx, *args):
         url = " ".join(args)
         await ctx.send(ans)
     
+    # Make the bot leave the voice channel
     @commands.command(name='leave')
     async def leave(self, ctx):
         self.playing = False
         await ctx.voice_client.disconnect()
     
-    
+    # Activate the Hyori Ittai loop. You can change the name and aliases if you decide to change the song link above
     @commands.command(name='hyoriittai', aliases=['hyit', 'hyori'])
     async def hyoriittai(self, ctx):
         if ctx.message.author.id == 218852384976273418:
@@ -522,6 +568,7 @@ class MusicCog(commands.Cog, name="Music Commands"):
             self.ctx = ctx
             ctx.voice_client.stop()
     
+    # The group of commands for creating, viewing and using your own personal playlist
     @commands.group()
     async def playlist(self, ctx):
         if ctx.invoked_subcommand is None:
@@ -529,6 +576,7 @@ class MusicCog(commands.Cog, name="Music Commands"):
             await asyncio.sleep(10)
             await msg.delete()
     
+    # Add a single song to your personal playlist. Creates a playlist for you if one doesnt already exist
     @playlist.command()
     async def add(self, ctx, *args):
         url = " ".join(args)
@@ -549,6 +597,7 @@ class MusicCog(commands.Cog, name="Music Commands"):
             embed=discord.Embed(description="Invalid url", color=0x51719f)
             await ctx.send(embed=embed)
     
+    # Add a whole youtube playlist to your discord playlist
     @playlist.command()
     async def addlist(self, ctx, url):
         if 'playlist?list=' in url:
@@ -559,6 +608,7 @@ class MusicCog(commands.Cog, name="Music Commands"):
             await asyncio.sleep(10)
             await msg.delete()
     
+    # Add the current playing song to your playlist
     @playlist.command(name='addnp', aliases=['addcurrent'])
     async def addnp(self, ctx):
         person = "playlists/"+str(ctx.message.author.id)+".txt"
@@ -575,6 +625,7 @@ class MusicCog(commands.Cog, name="Music Commands"):
         await ctx.send(embed=embed)
     
     
+    # An interface for viewing your playlist, similar to the interface for viewing the queue
     async def listinterface(self, ctx, person):
         self.ctx = ctx
         embed=discord.Embed(description='Right or Left to move through the list', color=0x51719f)
@@ -637,7 +688,8 @@ class MusicCog(commands.Cog, name="Music Commands"):
             print(error)
             embed=discord.Embed(description="You do not have a playlist", color=0x51719f)
             await ctx.send(embed=embed)
-            
+    
+    # The command to view your or someone else's list. Mention someone at the end of this command to view their list
     @playlist.command()
     async def list(self, ctx, user:discord.User = None):
         mentioned = False
@@ -654,7 +706,7 @@ class MusicCog(commands.Cog, name="Music Commands"):
             person = "playlists/"+str(user.id)+".txt"
         await self.listinterface(ctx, person)
         
-    
+    # Removes all songs from your discord playlist
     @playlist.command()
     async def clear(self, ctx):
         person = "playlists/"+str(ctx.message.author.id)+".txt"
@@ -663,7 +715,8 @@ class MusicCog(commands.Cog, name="Music Commands"):
         f.close()
         embed=discord.Embed(description="Playlist has been cleared", color=0x51719f)
         await ctx.send(embed=embed)
-        
+    
+    # The command to play a specific song from your playlist. You need to know the number that corresponds to it
     @playlist.command()
     async def play(self, ctx, num:int):
         self.ctx = ctx
@@ -695,6 +748,7 @@ class MusicCog(commands.Cog, name="Music Commands"):
             embed=discord.Embed(description='You are not in vc', color=0x51719f)
             await ctx.send(embed=embed)
     
+    # The interface to make sure everyone in the vc agrees to make this playlist the current auto-playlist
     async def setinterface(self, ctx, person):
         self.ctx = ctx
         members = ctx.voice_client.channel.members
@@ -724,7 +778,8 @@ class MusicCog(commands.Cog, name="Music Commands"):
             name = ctx.message.author.display_name
             embed=discord.Embed(description=f"Set playlist to {name}'s playlist", color=0x51719f)
             self.playlist = person
-            
+    
+    # The command to set your or someone else's list to the current auto-playlist. Mention someone at the end of this command to set their list
     @playlist.command()
     async def set(self, ctx, user:discord.User = None):
         self.ctx = ctx
@@ -777,14 +832,12 @@ class MusicCog(commands.Cog, name="Music Commands"):
             
             
         
-                
-        
-                
-    
+    # Set the auto-playlist back to the main Oshabott playlist
     @playlist.command()
     async def reset(self, ctx):
         self.playlist = "autoplaylist.txt"
-        
+    
+    # Remove a single song from your playlist. You must know the corresponding number.
     @playlist.command()
     async def remove(self, ctx, num:int, num2:int = 0):
         person = "playlists/"+str(ctx.message.author.id)+".txt"
@@ -824,3 +877,4 @@ class MusicCog(commands.Cog, name="Music Commands"):
 def setup(bot):
     bot.add_cog(MusicCog(bot))
 
+# Thats all, folks
